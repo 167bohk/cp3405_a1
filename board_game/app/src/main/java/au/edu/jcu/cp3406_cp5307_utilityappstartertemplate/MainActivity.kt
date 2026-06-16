@@ -274,16 +274,21 @@ private class GameSession {
         showMessage("${thief.name} stole 1 random hand card from ${victim.name}.")
     }
 
-    fun stealShownEquipment(victim: PlayerState, card: GameCard) {
+    fun stealEquipment(victim: PlayerState, card: GameCard) {
         val thief = selectedPlayer
         if (victim == thief) return
+        val wasRevealed = card in victim.shownEquipment
         if (!victim.equipment.remove(card)) {
             showMessage("${card.name} is no longer available.", warning = true)
             return
         }
         victim.shownEquipment.remove(card)
         thief.hand.add(card)
-        showMessage("${thief.name} stole ${card.name} from ${victim.name}.")
+        if (wasRevealed) {
+            showMessage("${thief.name} stole ${card.name} from ${victim.name}.")
+        } else {
+            showMessage("${thief.name} stole 1 unrevealed equipment from ${victim.name}.")
+        }
     }
 
     fun withdrawDiscard() {
@@ -470,19 +475,66 @@ private fun PlayerSelector(session: GameSession) {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         session.players.forEachIndexed { index, player ->
-            AssistChip(
-                onClick = { session.selectPlayer(index) },
-                label = { Text(player.name) },
-                leadingIcon = {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(player.accent)
-                    )
-                }
-            )
+            Column(
+                modifier = Modifier.width(124.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                AssistChip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { session.selectPlayer(index) },
+                    label = { Text(player.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(player.accent)
+                        )
+                    }
+                )
+                PlayerEquipmentPreview(player)
+            }
         }
     }
+}
+
+@Composable
+private fun PlayerEquipmentPreview(player: PlayerState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+    ) {
+        Column(
+            modifier = Modifier.padding(6.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = "Equipment",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+            if (player.equipment.isEmpty()) {
+                Text(
+                    text = "None",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                player.equipment.forEachIndexed { equipmentIndex, card ->
+                    Text(
+                        text = equipmentDisplayName(player, card, equipmentIndex),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun equipmentDisplayName(player: PlayerState, card: GameCard, index: Int): String {
+    return if (card in player.shownEquipment) card.name else "Unknown Card ${index + 1}"
 }
 
 @Composable
@@ -752,15 +804,30 @@ private fun StealPanel(session: GameSession) {
                             Text("Steal Hand")
                         }
                     }
-                    if (target.shownEquipment.isNotEmpty()) {
+                    if (target.equipment.isEmpty()) {
+                        Text(
+                            text = "No equipment.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "Equipment",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            target.shownEquipment.forEach { card ->
-                                OutlinedButton(onClick = { session.stealShownEquipment(target, card) }) {
-                                    Text("Steal ${card.name}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            target.equipment.forEachIndexed { index, card ->
+                                OutlinedButton(onClick = { session.stealEquipment(target, card) }) {
+                                    Text(
+                                        equipmentDisplayName(target, card, index),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                         }
