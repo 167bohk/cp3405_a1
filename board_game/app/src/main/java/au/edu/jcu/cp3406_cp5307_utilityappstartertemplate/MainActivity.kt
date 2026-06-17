@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -477,6 +478,7 @@ private fun PlayerSelector(session: GameSession) {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         session.players.forEachIndexed { index, player ->
+            val isSelected = index == session.selectedPlayerIndex
             Column(
                 modifier = Modifier.width(124.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -484,6 +486,14 @@ private fun PlayerSelector(session: GameSession) {
                 AssistChip(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { session.selectPlayer(index) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = if (isSelected) {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                        labelColor = MaterialTheme.colorScheme.onSurface
+                    ),
                     label = { Text(player.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = {
                         Box(
