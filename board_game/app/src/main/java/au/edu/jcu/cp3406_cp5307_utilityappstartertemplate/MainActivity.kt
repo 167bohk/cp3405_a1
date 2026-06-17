@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import au.edu.jcu.cp3406_cp5307_utilityappstartertemplate.ui.theme.CP3406_CP5603UtilityAppStarterTemplateTheme
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -684,7 +686,7 @@ private fun ActionPanel(session: GameSession) {
                 modifier = Modifier.weight(1f),
                 onClick = session::withdrawDiscard
             ) {
-                Text("Withdraw")
+                Text("Withdraw Discard")
             }
             OutlinedButton(
                 modifier = Modifier.weight(1f),
@@ -871,6 +873,8 @@ private fun CardListSection(
     onPrimary: (GameCard) -> Unit,
     onSecondary: (GameCard) -> Unit
 ) {
+    var previewCard by remember { mutableStateOf<GameCard?>(null) }
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         if (cards.isEmpty()) {
@@ -882,10 +886,18 @@ private fun CardListSection(
                     primaryAction = primaryAction,
                     secondaryAction = secondaryAction,
                     onPrimary = onPrimary,
-                    onSecondary = onSecondary
+                    onSecondary = onSecondary,
+                    onPreview = { previewCard = it }
                 )
             }
         }
+    }
+
+    previewCard?.let { card ->
+        CardPreviewDialog(
+            card = card,
+            onDismiss = { previewCard = null }
+        )
     }
 }
 
@@ -895,7 +907,8 @@ private fun CardRow(
     primaryAction: String,
     secondaryAction: String?,
     onPrimary: (GameCard) -> Unit,
-    onSecondary: (GameCard) -> Unit
+    onSecondary: (GameCard) -> Unit,
+    onPreview: (GameCard) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -912,7 +925,8 @@ private fun CardRow(
                 contentDescription = card.name,
                 modifier = Modifier
                     .width(84.dp)
-                    .height(116.dp),
+                    .height(116.dp)
+                    .clickable { onPreview(card) },
                 contentScale = ContentScale.Crop
             )
             Column(
@@ -935,6 +949,47 @@ private fun CardRow(
                             Text(secondaryAction)
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardPreviewDialog(
+    card: GameCard,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = if (card.isPremium) {
+                    MaterialTheme.colorScheme.tertiaryContainer
+                } else {
+                    MaterialTheme.colorScheme.secondaryContainer
+                }
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Image(
+                    painter = painterResource(card.imageResId),
+                    contentDescription = card.name,
+                    modifier = Modifier
+                        .width(260.dp)
+                        .height(360.dp),
+                    contentScale = ContentScale.Fit
+                )
+                Text(card.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(card.description, style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onDismiss
+                ) {
+                    Text("Close")
                 }
             }
         }
