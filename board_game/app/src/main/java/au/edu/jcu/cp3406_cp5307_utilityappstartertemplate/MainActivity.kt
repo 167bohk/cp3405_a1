@@ -619,7 +619,10 @@ private fun UtilityScreen(session: GameSession) {
                 secondaryAction = "Discard",
                 onPrimary = session::equipCard,
                 onSecondary = { session.discardCard(it, fromEquipment = false) },
-                onPreview = { previewCard = it }
+                onPreview = { previewCard = it },
+                extraActionLabel = null,
+                extraActionEnabled = { false },
+                onExtraAction = {}
             )
         }
         item {
@@ -631,7 +634,10 @@ private fun UtilityScreen(session: GameSession) {
                 secondaryAction = null,
                 onPrimary = { session.discardCard(it, fromEquipment = true) },
                 onSecondary = {},
-                onPreview = { previewCard = it }
+                onPreview = { previewCard = it },
+                extraActionLabel = { card -> if (card in player.shownEquipment) "Shown" else "Show" },
+                extraActionEnabled = { card -> card !in player.shownEquipment },
+                onExtraAction = session::showEquipment
             )
         }
     }
@@ -870,7 +876,6 @@ private fun StatText(label: String, value: String) {
 @Composable
 private fun ActionPanel(session: GameSession) {
     var showStatControls by remember { mutableStateOf(false) }
-    var showEquipmentControls by remember { mutableStateOf(false) }
     var showStealControls by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -923,65 +928,14 @@ private fun ActionPanel(session: GameSession) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             OutlinedButton(
-                modifier = Modifier.weight(1f),
-                onClick = { showEquipmentControls = !showEquipmentControls }
-            ) {
-                Text(if (showEquipmentControls) "Hide Equipment" else "Show Equipment")
-            }
-            OutlinedButton(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 onClick = { showStealControls = !showStealControls }
             ) {
                 Text(if (showStealControls) "Hide Steal" else "Steal")
             }
         }
-        if (showEquipmentControls) {
-            ShowEquipmentPanel(session)
-        }
         if (showStealControls) {
             StealPanel(session)
-        }
-    }
-}
-
-@Composable
-private fun ShowEquipmentPanel(session: GameSession) {
-    val player = session.selectedPlayer
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text("Reveal Equipment", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            if (player.equipment.isEmpty()) {
-                Text("No equipment to reveal.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                player.equipment.forEach { card ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = card.name,
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        OutlinedButton(
-                            enabled = card !in player.shownEquipment,
-                            onClick = { session.showEquipment(card) }
-                        ) {
-                            Text(if (card in player.shownEquipment) "Shown" else "Show")
-                        }
-                    }
-                }
-            }
         }
     }
 }
@@ -1084,7 +1038,10 @@ private fun CardListSection(
     secondaryAction: String?,
     onPrimary: (GameCard) -> Unit,
     onSecondary: (GameCard) -> Unit,
-    onPreview: (GameCard) -> Unit
+    onPreview: (GameCard) -> Unit,
+    extraActionLabel: ((GameCard) -> String)?,
+    extraActionEnabled: (GameCard) -> Boolean,
+    onExtraAction: (GameCard) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -1098,7 +1055,10 @@ private fun CardListSection(
                     secondaryAction = secondaryAction,
                     onPrimary = onPrimary,
                     onSecondary = onSecondary,
-                    onPreview = onPreview
+                    onPreview = onPreview,
+                    extraActionLabel = extraActionLabel,
+                    extraActionEnabled = extraActionEnabled,
+                    onExtraAction = onExtraAction
                 )
             }
         }
@@ -1112,7 +1072,10 @@ private fun CardRow(
     secondaryAction: String?,
     onPrimary: (GameCard) -> Unit,
     onSecondary: (GameCard) -> Unit,
-    onPreview: (GameCard) -> Unit
+    onPreview: (GameCard) -> Unit,
+    extraActionLabel: ((GameCard) -> String)?,
+    extraActionEnabled: (GameCard) -> Boolean,
+    onExtraAction: (GameCard) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1151,6 +1114,14 @@ private fun CardRow(
                     if (secondaryAction != null) {
                         OutlinedButton(onClick = { onSecondary(card) }) {
                             Text(secondaryAction)
+                        }
+                    }
+                    if (extraActionLabel != null) {
+                        OutlinedButton(
+                            enabled = extraActionEnabled(card),
+                            onClick = { onExtraAction(card) }
+                        ) {
+                            Text(extraActionLabel(card))
                         }
                     }
                 }
