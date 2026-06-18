@@ -710,11 +710,11 @@ private fun PlayerSelector(
                             onClick = { session.selectPlayer(index) },
                             colors = ButtonDefaults.outlinedButtonColors(
                                 containerColor = if (isSelected) {
-                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                    player.accent
                                 } else {
                                     MaterialTheme.colorScheme.surface
                                 },
-                                contentColor = MaterialTheme.colorScheme.onSurface
+                                contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
                             )
                         ) {
                             Row(
@@ -724,7 +724,7 @@ private fun PlayerSelector(
                                 Box(
                                     modifier = Modifier
                                         .size(10.dp)
-                                        .background(player.accent)
+                                        .background(if (isSelected) Color.White else player.accent)
                                 )
                                 Text(player.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
@@ -1053,7 +1053,10 @@ private fun ActionPanel(session: GameSession) {
         ) {
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = session::withdrawDiscard
+                onClick = session::withdrawDiscard,
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                )
             ) {
                 Text("Withdraw Discard")
             }
@@ -1064,7 +1067,10 @@ private fun ActionPanel(session: GameSession) {
         ) {
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
-                onClick = { showStealControls = !showStealControls }
+                onClick = { showStealControls = !showStealControls },
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                )
             ) {
                 Text(if (showStealControls) "Hide Steal" else "Steal")
             }
@@ -1247,25 +1253,28 @@ private fun CardPreview(
     card: GameCard,
     onDismiss: () -> Unit
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(16.dp)
     ) {
         Image(
             painter = painterResource(card.imageResId),
             contentDescription = card.name,
             modifier = Modifier
-                .width(300.dp)
-                .height(416.dp),
+                .align(Alignment.Center)
+                .width(340.dp)
+                .height(472.dp),
             contentScale = ContentScale.Fit
         )
         OutlinedButton(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onDismiss
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
+            onClick = onDismiss,
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            )
         ) {
             Text("Close Preview")
         }
