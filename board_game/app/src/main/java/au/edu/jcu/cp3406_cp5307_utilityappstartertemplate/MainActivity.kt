@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -339,7 +340,7 @@ internal class GameSession(
     }
 
     fun updateMaxHpLimit(value: Int) {
-        maxHpLimit = value.coerceIn(4, 20)
+        maxHpLimit = value.coerceIn(4, 12)
         players.forEach {
             it.maxHp = it.maxHp.coerceAtMost(maxHpLimit)
             it.currentHp = it.currentHp.coerceAtMost(it.maxHp)
@@ -348,7 +349,7 @@ internal class GameSession(
     }
 
     fun updateMaxEnergyLimit(value: Int) {
-        maxEnergyLimit = value.coerceIn(4, 20)
+        maxEnergyLimit = value.coerceIn(4, 12)
         startingEnergy = startingEnergy.coerceAtMost(maxEnergyLimit)
         players.forEach {
             it.maxEnergy = it.maxEnergy.coerceAtMost(maxEnergyLimit)
@@ -484,9 +485,14 @@ internal class GameSession(
         showMessage("${player.name}'s $stat updated.")
     }
 
-    fun resetEnergy() {
-        selectedPlayer.currentEnergy = selectedPlayer.maxEnergy
-        showMessage("${selectedPlayer.name}'s energy was reset.")
+    fun setCurrentHp(value: Int) {
+        selectedPlayer.currentHp = value.coerceIn(0, selectedPlayer.maxHp)
+        showMessage("${selectedPlayer.name}'s HP set to ${selectedPlayer.currentHp}.")
+    }
+
+    fun setCurrentEnergy(value: Int) {
+        selectedPlayer.currentEnergy = value.coerceIn(0, selectedPlayer.maxEnergy)
+        showMessage("${selectedPlayer.name}'s energy set to ${selectedPlayer.currentEnergy}.")
     }
 
     private fun resetDecks() {
@@ -608,7 +614,19 @@ private fun UtilityScreen(session: GameSession) {
             )
         }
         item {
-            PlayerSummary(player)
+            PlayerSummary(
+                player = player,
+                onHpSelected = session::setCurrentHp,
+                onEnergySelected = session::setCurrentEnergy,
+                onMaxHpDecrease = { session.modifyStat("Max HP", -1) },
+                onMaxHpIncrease = { session.modifyStat("Max HP", 1) },
+                onMaxEnergyDecrease = { session.modifyStat("Max Energy", -1) },
+                onMaxEnergyIncrease = { session.modifyStat("Max Energy", 1) },
+                onAttackRangeDecrease = { session.modifyStat("Attack Range", -1) },
+                onAttackRangeIncrease = { session.modifyStat("Attack Range", 1) },
+                onExpDecrease = { session.modifyStat("EXP", -1) },
+                onExpIncrease = { session.modifyStat("EXP", 1) }
+            )
         }
         item {
             ActionPanel(session)
@@ -784,7 +802,19 @@ private fun equipmentDisplayName(player: PlayerState, card: GameCard, index: Int
 }
 
 @Composable
-private fun PlayerSummary(player: PlayerState) {
+private fun PlayerSummary(
+    player: PlayerState,
+    onHpSelected: (Int) -> Unit,
+    onEnergySelected: (Int) -> Unit,
+    onMaxHpDecrease: () -> Unit,
+    onMaxHpIncrease: () -> Unit,
+    onMaxEnergyDecrease: () -> Unit,
+    onMaxEnergyIncrease: () -> Unit,
+    onAttackRangeDecrease: () -> Unit,
+    onAttackRangeIncrease: () -> Unit,
+    onExpDecrease: () -> Unit,
+    onExpIncrease: () -> Unit
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         modifier = Modifier.fillMaxWidth()
@@ -797,25 +827,40 @@ private fun PlayerSummary(player: PlayerState) {
             TokenStatRow(
                 label = "HP ${player.currentHp}/${player.maxHp}",
                 activeCount = player.currentHp,
-                inactiveCount = player.maxHp - player.currentHp,
+                totalCount = player.maxHp,
                 activeResId = R.drawable.token_hp_blue,
                 inactiveResId = R.drawable.token_hp_red,
                 tokenWidth = 28,
                 tokenHeight = 28,
-                spacing = (-1).dp
+                spacing = (-1).dp,
+                onTokenClick = onHpSelected,
+                onMaxDecrease = onMaxHpDecrease,
+                onMaxIncrease = onMaxHpIncrease
             )
             TokenStatRow(
                 label = "EN ${player.currentEnergy}/${player.maxEnergy}",
                 activeCount = player.currentEnergy,
-                inactiveCount = player.maxEnergy - player.currentEnergy,
+                totalCount = player.maxEnergy,
                 activeResId = R.drawable.token_energy_blue,
                 inactiveResId = R.drawable.token_energy_red,
                 tokenWidth = 34,
                 tokenHeight = 38,
-                spacing = (-8).dp
+                spacing = (-8).dp,
+                onTokenClick = onEnergySelected,
+                onMaxDecrease = onMaxEnergyDecrease,
+                onMaxIncrease = onMaxEnergyIncrease
             )
-            EvolutionStatRow(player.evolutionPoints)
-            StatText("Attack Range", player.attackRange.toString())
+            EvolutionStatRow(
+                points = player.evolutionPoints,
+                onDecrease = onExpDecrease,
+                onIncrease = onExpIncrease
+            )
+            AdjustableStatRow(
+                label = "Attack Range",
+                value = player.attackRange.toString(),
+                onDecrease = onAttackRangeDecrease,
+                onIncrease = onAttackRangeIncrease
+            )
             Text(
                 text = "Hand ${player.hand.size}   Equipment ${player.equipment.size}",
                 style = MaterialTheme.typography.bodyMedium,
@@ -829,50 +874,133 @@ private fun PlayerSummary(player: PlayerState) {
 private fun TokenStatRow(
     label: String,
     activeCount: Int,
-    inactiveCount: Int,
+    totalCount: Int,
     activeResId: Int,
     inactiveResId: Int,
     tokenWidth: Int,
     tokenHeight: Int,
-    spacing: androidx.compose.ui.unit.Dp
+    spacing: androidx.compose.ui.unit.Dp,
+    onTokenClick: (Int) -> Unit,
+    onMaxDecrease: () -> Unit,
+    onMaxIncrease: () -> Unit
 ) {
+    val safeTotal = totalCount.coerceAtLeast(0)
+    val safeActiveCount = activeCount.coerceIn(0, safeTotal)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(
-            horizontalArrangement = Arrangement.spacedBy(spacing),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            repeat(activeCount.coerceAtLeast(0)) {
-                TokenImage(activeResId, label, tokenWidth, tokenHeight)
+            SmallAdjustButton(text = "-", onClick = onMaxDecrease)
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(spacing),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    repeat(safeTotal) { index ->
+                        val resId = if (index < safeActiveCount) activeResId else inactiveResId
+                        val updatedCount = if (index < safeActiveCount) index else index + 1
+                        Box(modifier = Modifier.clickable { onTokenClick(updatedCount) }) {
+                            TokenImage(resId, label, tokenWidth, tokenHeight)
+                        }
+                    }
+                }
             }
-            repeat(inactiveCount.coerceAtLeast(0)) {
-                TokenImage(inactiveResId, label, tokenWidth, tokenHeight)
-            }
+            SmallAdjustButton(text = "+", onClick = onMaxIncrease)
         }
     }
 }
 
 @Composable
-private fun EvolutionStatRow(points: Int) {
+private fun EvolutionStatRow(
+    points: Int,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = "EXP $points/4",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        if (points == 0) {
-            Text("No evolution points yet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SmallAdjustButton(text = "-", onClick = onDecrease)
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.Center
             ) {
-                repeat(points.coerceAtLeast(0)) { index ->
-                    val resId = if (index % 2 == 0) R.drawable.token_exp_l else R.drawable.token_exp_r
-                    TokenImage(resId, "Evolution point", 20, 34)
+                if (points == 0) {
+                    Text(
+                        "No evolution points yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        repeat(points.coerceAtLeast(0)) { index ->
+                            val resId = if (index % 2 == 0) R.drawable.token_exp_l else R.drawable.token_exp_r
+                            TokenImage(resId, "Evolution point", 20, 34)
+                        }
+                    }
                 }
             }
+            SmallAdjustButton(text = "+", onClick = onIncrease)
         }
+    }
+}
+
+@Composable
+private fun AdjustableStatRow(
+    label: String,
+    value: String,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SmallAdjustButton(text = "-", onClick = onDecrease)
+            Text(
+                value,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+            SmallAdjustButton(text = "+", onClick = onIncrease)
+        }
+    }
+}
+
+@Composable
+private fun SmallAdjustButton(text: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .width(28.dp)
+            .height(32.dp)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -898,7 +1026,6 @@ private fun StatText(label: String, value: String) {
 
 @Composable
 private fun ActionPanel(session: GameSession) {
-    var showStatControls by remember { mutableStateOf(false) }
     var showStealControls by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -925,26 +1052,11 @@ private fun ActionPanel(session: GameSession) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             OutlinedButton(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth(),
                 onClick = session::withdrawDiscard
             ) {
                 Text("Withdraw Discard")
             }
-            OutlinedButton(
-                modifier = Modifier.weight(1f),
-                onClick = session::resetEnergy
-            ) {
-                Text("Reset EN")
-            }
-        }
-        OutlinedButton(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { showStatControls = !showStatControls }
-        ) {
-            Text(if (showStatControls) "Hide Stat Controls" else "Show Stat Controls")
-        }
-        if (showStatControls) {
-            StatControls(session)
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1022,29 +1134,6 @@ private fun StealPanel(session: GameSession) {
                                 }
                             }
                         }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatControls(session: GameSession) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("HP", "Max HP", "Energy", "Max Energy", "Attack Range", "EXP").forEach { stat ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(stat, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { session.modifyStat(stat, -1) }) {
-                        Text("-")
-                    }
-                    OutlinedButton(onClick = { session.modifyStat(stat, 1) }) {
-                        Text("+")
                     }
                 }
             }
@@ -1224,13 +1313,13 @@ private fun SettingsScreen(
         SettingSlider(
             title = "Max HP Limit",
             value = session.maxHpLimit,
-            valueRange = 4f..20f,
+            valueRange = 4f..12f,
             onValueChange = session::updateMaxHpLimit
         )
         SettingSlider(
             title = "Max Energy Limit",
             value = session.maxEnergyLimit,
-            valueRange = 4f..20f,
+            valueRange = 4f..12f,
             onValueChange = session::updateMaxEnergyLimit
         )
         HorizontalDivider()
