@@ -602,7 +602,10 @@ private fun UtilityScreen(session: GameSession) {
             HeaderSection(session)
         }
         item {
-            PlayerSelector(session)
+            PlayerSelector(
+                session = session,
+                onPreviewEquipment = { previewCard = it }
+            )
         }
         item {
             PlayerSummary(player)
@@ -652,7 +655,7 @@ private fun HeaderSection(session: GameSession) {
             fontWeight = FontWeight.Bold
         )
         Text(
-            text = "Normal ${session.normalDeck.size}/${session.totalNormalCards}   Premium ${session.premiumDeck.size}/${session.totalPremiumCards}",
+            text = "Normal ${session.normalDeck.size}/${session.totalNormalCards} Discard ${session.normalDiscard.size}   Premium ${session.premiumDeck.size}/${session.totalPremiumCards} Discard ${session.premiumDiscard.size}",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -665,7 +668,10 @@ private fun HeaderSection(session: GameSession) {
 }
 
 @Composable
-private fun PlayerSelector(session: GameSession) {
+private fun PlayerSelector(
+    session: GameSession,
+    onPreviewEquipment: (GameCard) -> Unit
+) {
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -705,7 +711,10 @@ private fun PlayerSelector(session: GameSession) {
                                 Text(player.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
-                        PlayerEquipmentPreview(player)
+                        PlayerEquipmentPreview(
+                            player = player,
+                            onPreviewEquipment = onPreviewEquipment
+                        )
                     }
                 }
                 repeat(3 - rowPlayers.size) {
@@ -721,7 +730,10 @@ private fun PlayerSelector(session: GameSession) {
 }
 
 @Composable
-private fun PlayerEquipmentPreview(player: PlayerState) {
+private fun PlayerEquipmentPreview(
+    player: PlayerState,
+    onPreviewEquipment: (GameCard) -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -744,11 +756,22 @@ private fun PlayerEquipmentPreview(player: PlayerState) {
                 )
             } else {
                 player.equipment.forEachIndexed { equipmentIndex, card ->
+                    val isShown = card in player.shownEquipment
                     Text(
                         text = equipmentDisplayName(player, card, equipmentIndex),
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (isShown) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        modifier = if (isShown) {
+                            Modifier.clickable { onPreviewEquipment(card) }
+                        } else {
+                            Modifier
+                        }
                     )
                 }
             }
