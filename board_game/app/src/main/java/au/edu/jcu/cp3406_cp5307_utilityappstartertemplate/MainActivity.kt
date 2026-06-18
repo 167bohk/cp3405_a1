@@ -1,5 +1,6 @@
 package au.edu.jcu.cp3406_cp5307_utilityappstartertemplate
 
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -38,14 +39,18 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +58,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import au.edu.jcu.cp3406_cp5307_utilityappstartertemplate.ui.theme.CP3406_CP5603UtilityAppStarterTemplateTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -94,6 +105,78 @@ private data class GameCard(
     val isPremium: Boolean,
     val imageResId: Int
 )
+
+private data class SpaceIntel(
+    val title: String,
+    val date: String,
+    val explanation: String,
+    val mediaUrl: String,
+    val mediaType: String
+)
+
+private data class SpaceIntelUiState(
+    val isLoading: Boolean = false,
+    val intel: SpaceIntel? = null,
+    val backgroundImage: ImageBitmap? = null,
+    val errorMessage: String? = null
+)
+
+private class SpaceIntelRepository {
+    suspend fun fetchDailyIntel(): SpaceIntel = withContext(Dispatchers.IO) {
+        val apiKey = "fdHA8ZcVRbWkrYqvMapkMVhxm1rIZoEkBa2zbQ2A"
+        val url = URL("https://api.nasa.gov/planetary/apod?api_key=$apiKey")
+        val connection = url.openConnection() as HttpURLConnection
+
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+
+            val responseCode = connection.responseCode
+            val stream = if (responseCode in 200..299) {
+                connection.inputStream
+            } else {
+                connection.errorStream
+            }
+            val responseText = stream.bufferedReader().use { it.readText() }
+
+            if (responseCode !in 200..299) {
+                throw IllegalStateException("NASA API returned $responseCode")
+            }
+
+            val json = JSONObject(responseText)
+            SpaceIntel(
+                title = json.optString("title", "Untitled space image"),
+                date = json.optString("date", "Unknown date"),
+                explanation = json.optString("explanation", "No explanation provided."),
+                mediaUrl = json.optString("url", ""),
+                mediaType = json.optString("media_type", "unknown")
+            )
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    suspend fun fetchImage(urlText: String): ImageBitmap = withContext(Dispatchers.IO) {
+        val connection = URL(urlText).openConnection() as HttpURLConnection
+
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+
+            val responseCode = connection.responseCode
+            if (responseCode !in 200..299) {
+                throw IllegalStateException("Image request returned $responseCode")
+            }
+
+            val bitmap = BitmapFactory.decodeStream(connection.inputStream)
+            bitmap.asImageBitmap()
+        } finally {
+            connection.disconnect()
+        }
+    }
+}
 
 private class PlayerState(
     val name: String,
@@ -366,6 +449,41 @@ private class GameSession {
 fun UtilityApp() {
     var selectedTab by remember { mutableStateOf(AppTab.Utility) }
     val session = remember { GameSession() }
+    val repository = remember { SpaceIntelRepository() }
+    val coroutineScope = rememberCoroutineScope()
+    var spaceIntelState by remember { mutableStateOf(SpaceIntelUiState(isLoading = true)) }
+
+    fun loadSpaceIntel() {
+        spaceIntelState = SpaceIntelUiState(
+            isLoading = true,
+            intel = spaceIntelState.intel,
+            backgroundImage = spaceIntelState.backgroundImage
+        )
+        coroutineScope.launch {
+            spaceIntelState = try {
+                val intel = repository.fetchDailyIntel()
+                val backgroundImage = if (intel.mediaType == "image" && intel.mediaUrl.isNotBlank()) {
+                    repository.fetchImage(intel.mediaUrl)
+                } else {
+                    null
+                }
+                SpaceIntelUiState(
+                    intel = intel,
+                    backgroundImage = backgroundImage
+                )
+            } catch (exception: Exception) {
+                SpaceIntelUiState(
+                    intel = spaceIntelState.intel,
+                    backgroundImage = spaceIntelState.backgroundImage,
+                    errorMessage = exception.message ?: "Unable to load space intel."
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadSpaceIntel()
+    }
 
     Scaffold(
         bottomBar = {
@@ -385,10 +503,32 @@ fun UtilityApp() {
             }
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
+        Box(
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            spaceIntelState.backgroundImage?.let { image ->
+                Image(
+                    bitmap = image,
+                    contentDescription = "NASA space background",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.55f))
+            )
             when (selectedTab) {
                 AppTab.Utility -> UtilityScreen(session)
-                AppTab.Settings -> SettingsScreen(session)
+                AppTab.Settings -> SettingsScreen(
+                    session = session,
+                    spaceIntelState = spaceIntelState,
+                    onRefreshSpaceIntel = { loadSpaceIntel() }
+                )
             }
         }
     }
@@ -410,7 +550,6 @@ private fun UtilityScreen(session: GameSession) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -1006,7 +1145,11 @@ private fun CardPreview(
 }
 
 @Composable
-private fun SettingsScreen(session: GameSession) {
+private fun SettingsScreen(
+    session: GameSession,
+    spaceIntelState: SpaceIntelUiState,
+    onRefreshSpaceIntel: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1015,6 +1158,10 @@ private fun SettingsScreen(session: GameSession) {
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        SpaceIntelPanel(
+            state = spaceIntelState,
+            onRefresh = onRefreshSpaceIntel
+        )
         SettingSlider(
             title = "Players",
             value = session.players.size,
@@ -1048,6 +1195,66 @@ private fun SettingsScreen(session: GameSession) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun SpaceIntelPanel(
+    state: SpaceIntelUiState,
+    onRefresh: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Daily Space Intel", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            when {
+                state.isLoading -> {
+                    Text("Loading NASA space data...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                state.errorMessage != null -> {
+                    Text(
+                        text = state.errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                state.intel != null -> {
+                    Text(state.intel.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = state.intel.date,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = state.intel.explanation,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 5,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (state.intel.mediaUrl.isNotBlank()) {
+                        Text(
+                            text = "${state.intel.mediaType}: ${state.intel.mediaUrl}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onRefresh,
+                enabled = !state.isLoading
+            ) {
+                Text("Refresh Space Intel")
+            }
+        }
     }
 }
 
