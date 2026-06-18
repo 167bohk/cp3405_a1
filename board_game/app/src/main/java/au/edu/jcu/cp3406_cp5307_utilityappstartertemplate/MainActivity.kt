@@ -39,12 +39,10 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +55,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import au.edu.jcu.cp3406_cp5307_utilityappstartertemplate.ui.theme.CP3406_CP5603UtilityAppStarterTemplateTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -99,14 +100,14 @@ private data class CardTemplate(
     val count: Int
 )
 
-private data class GameCard(
+internal data class GameCard(
     val name: String,
     val description: String,
     val isPremium: Boolean,
     val imageResId: Int
 )
 
-private data class SpaceIntel(
+internal data class SpaceIntel(
     val title: String,
     val date: String,
     val explanation: String,
@@ -114,14 +115,14 @@ private data class SpaceIntel(
     val mediaType: String
 )
 
-private data class SpaceIntelUiState(
+internal data class SpaceIntelUiState(
     val isLoading: Boolean = false,
     val intel: SpaceIntel? = null,
     val backgroundImage: ImageBitmap? = null,
     val errorMessage: String? = null
 )
 
-private class SpaceIntelRepository {
+internal class SpaceIntelRepository {
     suspend fun fetchDailyIntel(): SpaceIntel = withContext(Dispatchers.IO) {
         val apiKey = "fdHA8ZcVRbWkrYqvMapkMVhxm1rIZoEkBa2zbQ2A"
         val url = URL("https://api.nasa.gov/planetary/apod?api_key=$apiKey")
@@ -129,8 +130,8 @@ private class SpaceIntelRepository {
 
         try {
             connection.requestMethod = "GET"
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
+            connection.connectTimeout = 20000
+            connection.readTimeout = 20000
 
             val responseCode = connection.responseCode
             val stream = if (responseCode in 200..299) {
@@ -162,8 +163,8 @@ private class SpaceIntelRepository {
 
         try {
             connection.requestMethod = "GET"
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
+            connection.connectTimeout = 20000
+            connection.readTimeout = 20000
 
             val responseCode = connection.responseCode
             if (responseCode !in 200..299) {
@@ -178,7 +179,73 @@ private class SpaceIntelRepository {
     }
 }
 
-private class PlayerState(
+internal class CardRepository {
+    val totalNormalCards: Int
+        get() = cardTemplates.filter { !it.isPremium }.sumOf { it.count }
+
+    val totalPremiumCards: Int
+        get() = cardTemplates.filter { it.isPremium }.sumOf { it.count }
+
+    fun createCards(): List<GameCard> {
+        return cardTemplates.flatMap { template ->
+            List(template.count) { index ->
+                GameCard(
+                    name = if (template.count > 1) "${template.name} #${index + 1}" else template.name,
+                    description = template.description,
+                    isPremium = template.isPremium,
+                    imageResId = cardImageResId(template.name)
+                )
+            }
+        }
+    }
+}
+
+internal class GameViewModel : ViewModel() {
+    private val cardRepository = CardRepository()
+    private val spaceIntelRepository = SpaceIntelRepository()
+
+    val session = GameSession(cardRepository)
+    var spaceIntelState by mutableStateOf(SpaceIntelUiState(isLoading = true))
+        private set
+
+    init {
+        loadSpaceIntel()
+    }
+
+    fun loadSpaceIntel() {
+        spaceIntelState = SpaceIntelUiState(
+            isLoading = true,
+            intel = spaceIntelState.intel,
+            backgroundImage = spaceIntelState.backgroundImage
+        )
+        viewModelScope.launch {
+            spaceIntelState = try {
+                val intel = spaceIntelRepository.fetchDailyIntel()
+                val backgroundImage = if (intel.mediaType == "image" && intel.mediaUrl.isNotBlank()) {
+                    try {
+                        spaceIntelRepository.fetchImage(intel.mediaUrl)
+                    } catch (exception: Exception) {
+                        spaceIntelState.backgroundImage
+                    }
+                } else {
+                    null
+                }
+                SpaceIntelUiState(
+                    intel = intel,
+                    backgroundImage = backgroundImage
+                )
+            } catch (exception: Exception) {
+                SpaceIntelUiState(
+                    intel = spaceIntelState.intel,
+                    backgroundImage = spaceIntelState.backgroundImage,
+                    errorMessage = exception.message ?: "Unable to load space intel."
+                )
+            }
+        }
+    }
+}
+
+internal class PlayerState(
     val name: String,
     val accent: Color,
     maxHp: Int = 4,
@@ -199,7 +266,9 @@ private class PlayerState(
     val shownEquipment = mutableStateListOf<GameCard>()
 }
 
-private class GameSession {
+internal class GameSession(
+    private val cardRepository: CardRepository = CardRepository()
+) {
     var selectedPlayerIndex by mutableStateOf(0)
     var eventMode by mutableStateOf(false)
     var showPremiumCards by mutableStateOf(true)
@@ -228,10 +297,10 @@ private class GameSession {
         get() = players[selectedPlayerIndex]
 
     val totalNormalCards: Int
-        get() = cardTemplates.filter { !it.isPremium }.sumOf { it.count }
+        get() = cardRepository.totalNormalCards
 
     val totalPremiumCards: Int
-        get() = cardTemplates.filter { it.isPremium }.sumOf { it.count }
+        get() = cardRepository.totalPremiumCards
 
     fun selectPlayer(index: Int) {
         selectedPlayerIndex = index
@@ -412,19 +481,11 @@ private class GameSession {
         premiumDeck.clear()
         normalDiscard.clear()
         premiumDiscard.clear()
-        cardTemplates.forEach { template ->
-            repeat(template.count) { index ->
-                val card = GameCard(
-                    name = if (template.count > 1) "${template.name} #${index + 1}" else template.name,
-                    description = template.description,
-                    isPremium = template.isPremium,
-                    imageResId = cardImageResId(template.name)
-                )
-                if (template.isPremium) {
-                    premiumDeck.add(card)
-                } else {
-                    normalDeck.add(card)
-                }
+        cardRepository.createCards().forEach { card ->
+            if (card.isPremium) {
+                premiumDeck.add(card)
+            } else {
+                normalDeck.add(card)
             }
         }
     }
@@ -446,44 +507,10 @@ private class GameSession {
 }
 
 @Composable
-fun UtilityApp() {
+private fun UtilityApp(gameViewModel: GameViewModel = viewModel()) {
     var selectedTab by remember { mutableStateOf(AppTab.Utility) }
-    val session = remember { GameSession() }
-    val repository = remember { SpaceIntelRepository() }
-    val coroutineScope = rememberCoroutineScope()
-    var spaceIntelState by remember { mutableStateOf(SpaceIntelUiState(isLoading = true)) }
-
-    fun loadSpaceIntel() {
-        spaceIntelState = SpaceIntelUiState(
-            isLoading = true,
-            intel = spaceIntelState.intel,
-            backgroundImage = spaceIntelState.backgroundImage
-        )
-        coroutineScope.launch {
-            spaceIntelState = try {
-                val intel = repository.fetchDailyIntel()
-                val backgroundImage = if (intel.mediaType == "image" && intel.mediaUrl.isNotBlank()) {
-                    repository.fetchImage(intel.mediaUrl)
-                } else {
-                    null
-                }
-                SpaceIntelUiState(
-                    intel = intel,
-                    backgroundImage = backgroundImage
-                )
-            } catch (exception: Exception) {
-                SpaceIntelUiState(
-                    intel = spaceIntelState.intel,
-                    backgroundImage = spaceIntelState.backgroundImage,
-                    errorMessage = exception.message ?: "Unable to load space intel."
-                )
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        loadSpaceIntel()
-    }
+    val session = gameViewModel.session
+    val spaceIntelState = gameViewModel.spaceIntelState
 
     Scaffold(
         bottomBar = {
@@ -527,7 +554,7 @@ fun UtilityApp() {
                 AppTab.Settings -> SettingsScreen(
                     session = session,
                     spaceIntelState = spaceIntelState,
-                    onRefreshSpaceIntel = { loadSpaceIntel() }
+                    onRefreshSpaceIntel = gameViewModel::loadSpaceIntel
                 )
             }
         }
