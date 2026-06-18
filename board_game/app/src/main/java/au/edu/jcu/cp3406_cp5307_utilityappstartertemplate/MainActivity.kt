@@ -276,8 +276,9 @@ internal class GameSession(
     private val cardRepository: CardRepository = CardRepository()
 ) {
     var selectedPlayerIndex by mutableStateOf(0)
-    var eventMode by mutableStateOf(false)
-    var showPremiumCards by mutableStateOf(true)
+    var startingHandSize by mutableStateOf(4)
+    var maxHpLimit by mutableStateOf(8)
+    var maxEnergyLimit by mutableStateOf(8)
     var startingEnergy by mutableStateOf(4)
     var prompt by mutableStateOf("Select a player, draw cards, and track the current turn.")
     var promptWarning by mutableStateOf(false)
@@ -332,21 +333,32 @@ internal class GameSession(
         showMessage("New session started with ${players.size} players.")
     }
 
-    fun setPlayerCount(count: Int) {
-        val boundedCount = count.coerceIn(2, 5)
-        while (players.size < boundedCount) {
-            val next = players.size + 1
-            players.add(PlayerState("Player $next", playerColors[(next - 1) % playerColors.size]))
+    fun updateStartingHandSize(value: Int) {
+        startingHandSize = value.coerceIn(1, 8)
+        showMessage("Starting hand size set to $startingHandSize. Reset Session to redeal.")
+    }
+
+    fun updateMaxHpLimit(value: Int) {
+        maxHpLimit = value.coerceIn(4, 20)
+        players.forEach {
+            it.maxHp = it.maxHp.coerceAtMost(maxHpLimit)
+            it.currentHp = it.currentHp.coerceAtMost(it.maxHp)
         }
-        while (players.size > boundedCount) {
-            players.removeAt(players.lastIndex)
+        showMessage("Max HP limit set to $maxHpLimit.")
+    }
+
+    fun updateMaxEnergyLimit(value: Int) {
+        maxEnergyLimit = value.coerceIn(4, 20)
+        startingEnergy = startingEnergy.coerceAtMost(maxEnergyLimit)
+        players.forEach {
+            it.maxEnergy = it.maxEnergy.coerceAtMost(maxEnergyLimit)
+            it.currentEnergy = it.currentEnergy.coerceAtMost(it.maxEnergy)
         }
-        selectedPlayerIndex = selectedPlayerIndex.coerceAtMost(players.lastIndex)
-        showMessage("Player count set to $boundedCount.")
+        showMessage("Max Energy limit set to $maxEnergyLimit.")
     }
 
     fun updateStartingEnergy(value: Int) {
-        startingEnergy = value.coerceIn(2, 8)
+        startingEnergy = value.coerceIn(1, maxEnergyLimit)
         players.forEach {
             it.maxEnergy = startingEnergy
             it.currentEnergy = it.currentEnergy.coerceAtMost(startingEnergy)
@@ -354,11 +366,6 @@ internal class GameSession(
     }
 
     fun drawCard(premium: Boolean) {
-        if (premium && !showPremiumCards) {
-            showMessage("Premium card drawing is disabled in Settings.", warning = true)
-            return
-        }
-
         val deck = if (premium) premiumDeck else normalDeck
         val discard = if (premium) premiumDiscard else normalDiscard
         if (deck.isEmpty() && discard.isNotEmpty()) {
@@ -463,15 +470,15 @@ internal class GameSession(
         when (stat) {
             "HP" -> player.currentHp = (player.currentHp + delta).coerceIn(0, player.maxHp)
             "Max HP" -> {
-                player.maxHp = (player.maxHp + delta).coerceIn(1, 12)
+                player.maxHp = (player.maxHp + delta).coerceIn(1, maxHpLimit)
                 player.currentHp = player.currentHp.coerceAtMost(player.maxHp)
             }
             "Energy" -> player.currentEnergy = (player.currentEnergy + delta).coerceIn(0, player.maxEnergy)
             "Max Energy" -> {
-                player.maxEnergy = (player.maxEnergy + delta).coerceIn(1, 12)
+                player.maxEnergy = (player.maxEnergy + delta).coerceIn(1, maxEnergyLimit)
                 player.currentEnergy = player.currentEnergy.coerceAtMost(player.maxEnergy)
             }
-            "AR" -> player.attackRange = (player.attackRange + delta).coerceIn(1, 12)
+            "Attack Range" -> player.attackRange = (player.attackRange + delta).coerceIn(1, 12)
             "EXP" -> player.evolutionPoints = (player.evolutionPoints + delta).coerceIn(0, 24)
         }
         showMessage("${player.name}'s $stat updated.")
@@ -497,7 +504,7 @@ internal class GameSession(
     }
 
     private fun dealStartingHands() {
-        repeat(4) {
+        repeat(startingHandSize) {
             players.take(4).forEach { player ->
                 if (normalDeck.isNotEmpty()) {
                     player.hand.add(normalDeck.removeAt(Random.nextInt(normalDeck.size)))
@@ -779,7 +786,7 @@ private fun PlayerSummary(player: PlayerState) {
                 spacing = (-8).dp
             )
             EvolutionStatRow(player.evolutionPoints)
-            StatText("AR", player.attackRange.toString())
+            StatText("Attack Range", player.attackRange.toString())
             Text(
                 text = "Hand ${player.hand.size}   Equipment ${player.equipment.size}",
                 style = MaterialTheme.typography.bodyMedium,
@@ -1048,7 +1055,7 @@ private fun StealPanel(session: GameSession) {
 @Composable
 private fun StatControls(session: GameSession) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("HP", "Max HP", "Energy", "Max Energy", "AR", "EXP").forEach { stat ->
+        listOf("HP", "Max HP", "Energy", "Max Energy", "Attack Range", "EXP").forEach { stat ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1209,28 +1216,28 @@ private fun SettingsScreen(
             onCheckedChange = onShowSpaceBackgroundChange
         )
         SettingSlider(
-            title = "Players",
-            value = session.players.size,
-            valueRange = 2f..5f,
-            onValueChange = session::setPlayerCount
+            title = "Starting Hand Cards",
+            value = session.startingHandSize,
+            valueRange = 1f..8f,
+            onValueChange = session::updateStartingHandSize
         )
         SettingSlider(
             title = "Starting Energy",
             value = session.startingEnergy,
-            valueRange = 2f..8f,
+            valueRange = 1f..session.maxEnergyLimit.toFloat(),
             onValueChange = session::updateStartingEnergy
         )
-        SettingSwitch(
-            title = "Event Mode",
-            description = "Tracks whether the black hole event map rules are active.",
-            checked = session.eventMode,
-            onCheckedChange = { session.eventMode = it }
+        SettingSlider(
+            title = "Max HP Limit",
+            value = session.maxHpLimit,
+            valueRange = 4f..20f,
+            onValueChange = session::updateMaxHpLimit
         )
-        SettingSwitch(
-            title = "Premium Cards",
-            description = "Allows premium deck draws from the main screen.",
-            checked = session.showPremiumCards,
-            onCheckedChange = { session.showPremiumCards = it }
+        SettingSlider(
+            title = "Max Energy Limit",
+            value = session.maxEnergyLimit,
+            valueRange = 4f..20f,
+            onValueChange = session::updateMaxEnergyLimit
         )
         HorizontalDivider()
         Button(modifier = Modifier.fillMaxWidth(), onClick = session::resetGame) {
