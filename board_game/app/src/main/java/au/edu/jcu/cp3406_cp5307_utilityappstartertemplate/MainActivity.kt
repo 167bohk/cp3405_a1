@@ -207,9 +207,15 @@ internal class GameViewModel : ViewModel() {
     val session = GameSession(cardRepository)
     var spaceIntelState by mutableStateOf(SpaceIntelUiState(isLoading = true))
         private set
+    var showSpaceBackground by mutableStateOf(true)
+        private set
 
     init {
         loadSpaceIntel()
+    }
+
+    fun updateShowSpaceBackground(value: Boolean) {
+        showSpaceBackground = value
     }
 
     fun loadSpaceIntel() {
@@ -511,6 +517,7 @@ private fun UtilityApp(gameViewModel: GameViewModel = viewModel()) {
     var selectedTab by remember { mutableStateOf(AppTab.Utility) }
     val session = gameViewModel.session
     val spaceIntelState = gameViewModel.spaceIntelState
+    val showSpaceBackground = gameViewModel.showSpaceBackground
 
     Scaffold(
         bottomBar = {
@@ -536,13 +543,15 @@ private fun UtilityApp(gameViewModel: GameViewModel = viewModel()) {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            spaceIntelState.backgroundImage?.let { image ->
-                Image(
-                    bitmap = image,
-                    contentDescription = "NASA space background",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+            if (showSpaceBackground) {
+                spaceIntelState.backgroundImage?.let { image ->
+                    Image(
+                        bitmap = image,
+                        contentDescription = "NASA space background",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
             }
             Box(
                 modifier = Modifier
@@ -554,6 +563,8 @@ private fun UtilityApp(gameViewModel: GameViewModel = viewModel()) {
                 AppTab.Settings -> SettingsScreen(
                     session = session,
                     spaceIntelState = spaceIntelState,
+                    showSpaceBackground = showSpaceBackground,
+                    onShowSpaceBackgroundChange = gameViewModel::updateShowSpaceBackground,
                     onRefreshSpaceIntel = gameViewModel::loadSpaceIntel
                 )
             }
@@ -1175,6 +1186,8 @@ private fun CardPreview(
 private fun SettingsScreen(
     session: GameSession,
     spaceIntelState: SpaceIntelUiState,
+    showSpaceBackground: Boolean,
+    onShowSpaceBackgroundChange: (Boolean) -> Unit,
     onRefreshSpaceIntel: () -> Unit
 ) {
     Column(
@@ -1188,6 +1201,12 @@ private fun SettingsScreen(
         SpaceIntelPanel(
             state = spaceIntelState,
             onRefresh = onRefreshSpaceIntel
+        )
+        SettingSwitch(
+            title = "Space Background",
+            description = "Use the NASA daily image as the app background.",
+            checked = showSpaceBackground,
+            onCheckedChange = onShowSpaceBackgroundChange
         )
         SettingSlider(
             title = "Players",
