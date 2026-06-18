@@ -4,14 +4,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,8 +23,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,7 +39,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,7 +52,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import au.edu.jcu.cp3406_cp5307_utilityappstartertemplate.ui.theme.CP3406_CP5603UtilityAppStarterTemplateTheme
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -110,12 +104,12 @@ private class PlayerState(
     maxEnergy: Int = 4,
     currentEnergy: Int = 4
 ) {
-    var maxHp by mutableIntStateOf(maxHp)
-    var currentHp by mutableIntStateOf(currentHp)
-    var attackRange by mutableIntStateOf(attackRange)
-    var maxEnergy by mutableIntStateOf(maxEnergy)
-    var currentEnergy by mutableIntStateOf(currentEnergy)
-    var evolutionPoints by mutableIntStateOf(0)
+    var maxHp by mutableStateOf(maxHp)
+    var currentHp by mutableStateOf(currentHp)
+    var attackRange by mutableStateOf(attackRange)
+    var maxEnergy by mutableStateOf(maxEnergy)
+    var currentEnergy by mutableStateOf(currentEnergy)
+    var evolutionPoints by mutableStateOf(0)
     var lastDiscardWasPremium by mutableStateOf(false)
     val hand = mutableStateListOf<GameCard>()
     val equipment = mutableStateListOf<GameCard>()
@@ -123,10 +117,10 @@ private class PlayerState(
 }
 
 private class GameSession {
-    var selectedPlayerIndex by mutableIntStateOf(0)
+    var selectedPlayerIndex by mutableStateOf(0)
     var eventMode by mutableStateOf(false)
     var showPremiumCards by mutableStateOf(true)
-    var startingEnergy by mutableIntStateOf(4)
+    var startingEnergy by mutableStateOf(4)
     var prompt by mutableStateOf("Select a player, draw cards, and track the current turn.")
     var promptWarning by mutableStateOf(false)
 
@@ -403,6 +397,15 @@ fun UtilityApp() {
 @Composable
 private fun UtilityScreen(session: GameSession) {
     val player = session.selectedPlayer
+    var previewCard by remember { mutableStateOf<GameCard?>(null) }
+
+    previewCard?.let { card ->
+        CardPreview(
+            card = card,
+            onDismiss = { previewCard = null }
+        )
+        return
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -431,7 +434,8 @@ private fun UtilityScreen(session: GameSession) {
                 primaryAction = "Equip",
                 secondaryAction = "Discard",
                 onPrimary = session::equipCard,
-                onSecondary = { session.discardCard(it, fromEquipment = false) }
+                onSecondary = { session.discardCard(it, fromEquipment = false) },
+                onPreview = { previewCard = it }
             )
         }
         item {
@@ -442,7 +446,8 @@ private fun UtilityScreen(session: GameSession) {
                 primaryAction = "Discard",
                 secondaryAction = null,
                 onPrimary = { session.discardCard(it, fromEquipment = true) },
-                onSecondary = {}
+                onSecondary = {},
+                onPreview = { previewCard = it }
             )
         }
     }
@@ -470,40 +475,56 @@ private fun HeaderSection(session: GameSession) {
 }
 
 @Composable
-@OptIn(ExperimentalLayoutApi::class)
 private fun PlayerSelector(session: GameSession) {
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    Column(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        session.players.forEachIndexed { index, player ->
-            val isSelected = index == session.selectedPlayerIndex
-            Column(
-                modifier = Modifier.width(124.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+        session.players.chunked(3).forEachIndexed { rowIndex, rowPlayers ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                AssistChip(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { session.selectPlayer(index) },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = if (isSelected) {
-                            MaterialTheme.colorScheme.surfaceContainerHigh
-                        } else {
-                            MaterialTheme.colorScheme.surface
-                        },
-                        labelColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    label = { Text(player.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingIcon = {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .background(player.accent)
-                        )
+                rowPlayers.forEachIndexed { columnIndex, player ->
+                    val index = rowIndex * 3 + columnIndex
+                    val isSelected = index == session.selectedPlayerIndex
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { session.selectPlayer(index) },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isSelected) {
+                                    MaterialTheme.colorScheme.surfaceContainerHigh
+                                } else {
+                                    MaterialTheme.colorScheme.surface
+                                },
+                                contentColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(player.accent)
+                                )
+                                Text(player.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        PlayerEquipmentPreview(player)
                     }
-                )
-                PlayerEquipmentPreview(player)
+                }
+                repeat(3 - rowPlayers.size) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .width(1.dp)
+                    )
+                }
             }
         }
     }
@@ -663,7 +684,6 @@ private fun StatText(label: String, value: String) {
 }
 
 @Composable
-@OptIn(ExperimentalLayoutApi::class)
 private fun ActionPanel(session: GameSession) {
     var showStatControls by remember { mutableStateOf(false) }
     var showEquipmentControls by remember { mutableStateOf(false) }
@@ -783,7 +803,6 @@ private fun ShowEquipmentPanel(session: GameSession) {
 }
 
 @Composable
-@OptIn(ExperimentalLayoutApi::class)
 private fun StealPanel(session: GameSession) {
     val thief = session.selectedPlayer
     val targets = session.players.filter { it != thief }
@@ -828,13 +847,12 @@ private fun StealPanel(session: GameSession) {
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             target.equipment.forEachIndexed { index, card ->
-                                OutlinedButton(onClick = { session.stealEquipment(target, card) }) {
+                                OutlinedButton(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = { session.stealEquipment(target, card) }
+                                ) {
                                     Text(
                                         equipmentDisplayName(target, card, index),
                                         maxLines = 1,
@@ -881,10 +899,9 @@ private fun CardListSection(
     primaryAction: String,
     secondaryAction: String?,
     onPrimary: (GameCard) -> Unit,
-    onSecondary: (GameCard) -> Unit
+    onSecondary: (GameCard) -> Unit,
+    onPreview: (GameCard) -> Unit
 ) {
-    var previewCard by remember { mutableStateOf<GameCard?>(null) }
-
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         if (cards.isEmpty()) {
@@ -897,17 +914,10 @@ private fun CardListSection(
                     secondaryAction = secondaryAction,
                     onPrimary = onPrimary,
                     onSecondary = onSecondary,
-                    onPreview = { previewCard = it }
+                    onPreview = onPreview
                 )
             }
         }
-    }
-
-    previewCard?.let { card ->
-        CardPreviewDialog(
-            card = card,
-            onDismiss = { previewCard = null }
-        )
     }
 }
 
@@ -966,42 +976,31 @@ private fun CardRow(
 }
 
 @Composable
-private fun CardPreviewDialog(
+private fun CardPreview(
     card: GameCard,
     onDismiss: () -> Unit
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = if (card.isPremium) {
-                    MaterialTheme.colorScheme.tertiaryContainer
-                } else {
-                    MaterialTheme.colorScheme.secondaryContainer
-                }
-            )
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Image(
+            painter = painterResource(card.imageResId),
+            contentDescription = card.name,
+            modifier = Modifier
+                .width(300.dp)
+                .height(416.dp),
+            contentScale = ContentScale.Fit
+        )
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onDismiss
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Image(
-                    painter = painterResource(card.imageResId),
-                    contentDescription = card.name,
-                    modifier = Modifier
-                        .width(260.dp)
-                        .height(360.dp),
-                    contentScale = ContentScale.Fit
-                )
-                Text(card.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(card.description, style = MaterialTheme.typography.bodyMedium)
-                OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = onDismiss
-                ) {
-                    Text("Close")
-                }
-            }
+            Text("Close Preview")
         }
     }
 }
